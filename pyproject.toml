@@ -1,0 +1,35 @@
+[build-system]
+requires = ["scikit-build-core>=0.3.3", "pybind11"]
+build-backend = "scikit_build_core.build"
+
+[project]
+name = "solarprop"
+version = "2.0.0"
+description="Solar modulation for everyone with python."
+readme = "README.md"
+authors = [
+  { name = "Henning Gast", email = "henning@physik.rwth-aachen.de" },
+]
+dependencies = [
+  "numpy",
+  "scipy",
+  "matplotlib",
+  "sunpy",
+]
+requires-python = ">=3.10"
+classifiers = [
+  "Development Status :: 5 - Production/Stable",
+  "License :: OSI Approved :: MIT License",
+  "Programming Language :: Python :: 3 :: Only",
+  "Programming Language :: Python :: 3.10",
+  "Programming Language :: Python :: 3.11",
+  "Programming Language :: Python :: 3.12",
+  "Programming Language :: Python :: 3.13",
+  "Programming Language :: Python :: 3.14",
+  "Topic :: Scientific/Engineering :: Physics",
+]
+
+
+[tool.scikit-build]
+build-dir = "build/{wheel_tag}"
+build.verbose = true

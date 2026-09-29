@@ -1,0 +1,161 @@
+#! /usr/bin/env python3
+
+"""
+Study distributions of relevant pseudo-particle quantities for a fixed initial energy:
+
+  - energy loss,
+  - distance of closest approach to the Sun,
+  - cos(theta), where theta is the polar coordinate of the point of entry to the heliosphere,
+  - propagation time.
+
+"""
+
+import argparse
+import configparser
+from copy import copy
+import os
+import sys
+import time
+from importlib import resources
+
+import matplotlib.pyplot as plt
+import matplotlib.ticker as mticker
+import numpy as np
+
+import solarprop
+from solarprop.units import AU, GeV, days
+
+plt.rcParams['font.size'] = 18.0
+plt.rcParams['font.family'] = 'sans-serif'
+plt.rcParams['font.sans-serif'] = 'Arial'
+plt.rcParams['font.weight'] = 'bold'
+plt.rcParams['axes.labelsize'] = 'medium'
+plt.rcParams['axes.labelweight'] = 'bold'
+plt.rcParams['axes.linewidth'] = 1.2
+plt.rcParams['axes.titlesize'] = 'small'
+plt.rcParams['axes.titleweight'] = 'bold'
+plt.rcParams['xaxis.labellocation'] = 'right'
+plt.rcParams['yaxis.labellocation'] = 'top'
+plt.rcParams['lines.linewidth'] = 2.0
+plt.rcParams['legend.fontsize'] = 18
+plt.rcParams['legend.framealpha'] = 1.0
+default_figsize = (9, 12)
+plt.rcParams['figure.figsize'] = default_figsize
+
+mylocator = mticker.MaxNLocator(steps=[1, 2, 5, 10], integer=True)
+
+parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawTextHelpFormatter)
+parser.add_argument('-c', '--control', default='', help='Control file.')
+parser.add_argument('-p', '--parameters', default='', help='Specify parameters as comma-separated list of key=value pairs. Takes precedence over control file. Verbosity 4: print final step for each particle, 5: print intermediate steps.')
+parser.add_argument('-e', '--ekin', type=float, default=1.0, help='Kinetic energy in GeV.')
+parser.add_argument('-n', '--number', type=int, default=1, help='Number of pseudo-particles.')
+parser.add_argument('-o', '--output-prefix', default='', help='Store plots instead of showing them, use given prefix for filenames.')
+parser.add_argument('-q', '--charges', action='store_true', help='Compare results for particle charges of +1 and -1.')
+args = parser.parse_args()
+
+parameters = {
+    'mass': 0.93827231,
+    'charge': 1,
+    'angleFile': str(resources.files(solarprop).joinpath('solarprop-data/angle.dat')),
+    'omniFile': str(resources.files(solarprop).joinpath('solarprop-data/omniweb.dat')),
+    'ssnFile': str(resources.files(solarprop).joinpath('solarprop-data/ssn.dat')),
+}
+
+if args.control:
+    config = configparser.ConfigParser()
+    # prevent ConfigParser from converting all keys to lower case, see
+    #  https://stackoverflow.com/questions/19359556/configparser-reads-capital-keys-and-make-them-lower-case
+    config.optionxform = str
+
+    config.read(args.control)
+    parameters |= dict(config.items('solarprop'))
+
+if args.parameters:
+    for kv in args.parameters.split(','):
+        key, value = kv.split('=')
+        parameters[key.strip()] = value.strip()
+
+charges = [int(parameters.get('charge', 1))]
+if args.charges:
+    if 'charge' in parameters:
+        del parameters['charge']
+    charges = [1, -1]
+
+for k, v in parameters.items():
+    print(f'{k:20s}: {v}')
+
+s = solarprop.Solarprop(parameters)
+
+for icharge, charge in enumerate(charges):
+    s.update_parameters({'charge': charge})
+
+    t_start = time.perf_counter()
+    endpoints = s.endpoints(args.number, args.ekin)
+    t_end = time.perf_counter()
+    if not endpoints:
+        sys.exit(1)
+
+    print(f'Runtime: {t_end-t_start:.4f} seconds.')
+
+    color = 'blue' if charge > 0 else 'red'
+
+    # extract energy gain and minimum r coordinate, but only for valid pseudo-particles, that have left the heliosphere
+    deltaT = np.array([t.T() for t in endpoints if not t.isInsideHeliosphere()]) - args.ekin*GeV
+    rmin = np.array([t.rmin() for t in endpoints if not t.isInsideHeliosphere()])
+    costheta = np.cos(np.array([t.theta() for t in endpoints if not t.isInsideHeliosphere()]))
+    proptime = np.array([t.time() for t in endpoints if not t.isInsideHeliosphere()]) / days
+
+    nplots = 4
+    plt.figure('delta', figsize=(24, 12))
+    plt.subplot(len(charges), nplots, nplots * icharge + 1)
+    counts, _, _ = plt.hist(deltaT / GeV, bins=200, range=(0.0, 2.5), color=color)
+    lcolor = 'red' if color == 'blue' else 'blue'
+    mean_deltaT = np.mean(deltaT)
+    med_deltaT = np.median(deltaT)
+    print(f'Mean delta T= {mean_deltaT/GeV:.3f} GeV, median= {med_deltaT/GeV:.3f} GeV')
+
+    plt.axvline(mean_deltaT / GeV, color=lcolor)
+    annot_offset = 25 if mean_deltaT/GeV < 1.0 else -100
+    plt.annotate(f'{mean_deltaT / GeV:.3f} GeV', xy=(mean_deltaT / GeV, 0.9*np.max(counts)), xytext=(annot_offset, 0), textcoords='offset points', color=color)
+    plt.xlabel(r'$\Delta{}T$ / GeV')
+    plt.xlim(0.0, 2.5)
+    plt.gca().xaxis.set_major_locator(mticker.MaxNLocator(steps=[1, 2, 5, 10]))
+    plt.gca().yaxis.set_major_locator(copy(mylocator))
+    plt.minorticks_on()
+
+    plt.subplot(len(charges), nplots, nplots * icharge + 2)
+    plt.hist(rmin / AU, bins=210, range=(0.0, 1.05), color=color)
+    plt.xlabel(r'$r_\mathrm{min}$ / AU')
+    plt.xlim(0.0, 1.05)
+    plt.yscale('log')
+    #plt.ylim(5.0, 1.05*args.delta)
+    plt.gca().xaxis.set_major_locator(mticker.MaxNLocator(steps=[1, 2, 5, 10]))
+    plt.minorticks_on()
+
+    plt.subplot(len(charges), nplots, nplots * icharge + 3)
+    plt.hist(costheta, bins=100, range=(-1., 1.), color=color)
+    plt.xlabel(r'$\cos\theta$')
+    plt.xlim(-1., 1.)
+    plt.gca().xaxis.set_major_locator(mticker.MaxNLocator(steps=[1, 2, 5, 10]))
+    plt.minorticks_on()
+
+    plt.subplot(len(charges), nplots, nplots * icharge + 4)
+    plt.hist(proptime, bins=100, range=(0., 300.), color=color)
+    plt.xlabel('propagation time (days)')
+    plt.xlim(0., 300.)
+    plt.gca().xaxis.set_major_locator(mticker.MaxNLocator(steps=[1, 2, 5, 10]))
+    plt.minorticks_on()
+
+    plt.tight_layout()
+
+    # store plot?
+    if args.output_prefix:
+        if os.path.isdir(args.output_prefix):
+            ofname = os.path.join(args.output_prefix, 'distributions.png')
+        else:
+            ofname = args.output_prefix + '_distributions.png'
+        print('Writing', ofname)
+        plt.savefig(ofname)
+
+if not args.output_prefix:
+    plt.show()

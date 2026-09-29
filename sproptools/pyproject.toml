@@ -1,0 +1,33 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "sproptools"
+version = "0.0.1"
+description="Tools useful for analysis of cosmic-ray data, in particular in conjunction with SOLARPROP."
+readme = "README.md"
+authors = [
+  { name = "Henning Gast", email = "henning@physik.rwth-aachen.de" },
+]
+dependencies = [
+  "numpy",
+  "scipy",
+  "matplotlib",
+  "pandas",
+]
+requires-python = ">=3.10"
+classifiers = [
+  "Development Status :: 4 - Beta",
+  "License :: OSI Approved :: MIT License",
+  "Programming Language :: Python :: 3 :: Only",
+  "Programming Language :: Python :: 3.10",
+  "Programming Language :: Python :: 3.11",
+  "Programming Language :: Python :: 3.12",
+  "Programming Language :: Python :: 3.13",
+  "Programming Language :: Python :: 3.14",
+  "Topic :: Scientific/Engineering :: Physics",
+]
+
+[tool.hatch.build.targets.wheel]
+      packages = ["src/sproptools"]

@@ -1,0 +1,153 @@
+#! /usr/bin/env python3
+
+"""
+Draw vector fields illustrating the contributions of individual transport processes.
+"""
+
+import argparse
+import configparser
+from copy import copy
+import os
+import sys
+from importlib import resources
+
+import numpy as np
+import matplotlib.pyplot as plt
+import matplotlib.ticker as mticker
+
+import solarprop
+from solarprop.units import AU, second
+
+plt.rcParams['font.size'] = 30.0
+plt.rcParams['font.family'] = 'sans-serif'
+plt.rcParams['font.weight'] = 'bold'
+plt.rcParams['axes.labelsize'] = 'medium'
+plt.rcParams['axes.labelweight'] = 'bold'
+plt.rcParams['axes.linewidth'] = 1.2
+plt.rcParams['axes.titlesize'] = 'small'
+plt.rcParams['axes.titleweight'] = 'bold'
+plt.rcParams['xaxis.labellocation'] = 'right'
+plt.rcParams['yaxis.labellocation'] = 'top'
+plt.rcParams['lines.linewidth'] = 2.0
+plt.rcParams['figure.figsize'] = (9, 12)
+
+mylocator = mticker.MaxNLocator(steps=[1, 2, 5, 10], integer=True)
+
+
+def plot(ax, arrows, color, xzrange, title):
+
+    ax.set_aspect('equal', adjustable='box')
+    ax.quiver(arrows[:,0], arrows[:,1], arrows[:,2], arrows[:,3], angles='xy', scale_units='xy', scale=1, width=0.005, color=color)
+    ax.set_title(title)
+    ax.set_xlim(0., xzrange)
+    ax.set_ylim(-xzrange, xzrange)
+    ax.set_xlabel('x (AU)')
+    ax.xaxis.set_major_locator(copy(mylocator))
+    ax.yaxis.set_major_locator(copy(mylocator))
+
+parser = argparse.ArgumentParser(description=__doc__)
+parser.add_argument('-b', '--batch', action='store_true', help='Batch mode. Do not show plots. Useful together with the -o option.')
+parser.add_argument('-c', '--control', default='', help='Control file.')
+parser.add_argument('-p', '--parameters', default='', help='Specify parameters as comma-separated list of key=value pairs. Takes precedence over control file.')
+parser.add_argument('-e', '--ekin', type=float, default=1.0, help='Kinetic energy in GeV.')
+parser.add_argument('-g', '--grid-points', type=int, default=10, help='Number of grid points per direction.')
+parser.add_argument('-o', '--output', nargs='?', const='arrows.pdf', help='Save plots with given file name. When -f option is used, suffixes labelling the transport processes will be inserted. Output format is determined from the file extension.')
+parser.add_argument('-r', '--rmax', type=float, default=100., help='Radial boundary in AU.')
+parser.add_argument('-s', '--scale-arrows', type=float, default=1., help='Scale factor for convection and drift arrows.')
+parser.add_argument('-f', '--separate', action='store_true', help='Plot separate figures for each contribution?')
+args = parser.parse_args()
+
+boundary = args.rmax
+
+parameters = {
+    'mass': 0.93827231,
+    'charge': 1,
+    'angleFile': str(resources.files(solarprop).joinpath('solarprop-data/angle.dat')),
+    'omniFile': str(resources.files(solarprop).joinpath('solarprop-data/omniweb.dat')),
+    'ssnFile': str(resources.files(solarprop).joinpath('solarprop-data/ssn.dat')),
+}
+
+if args.control:
+    config = configparser.ConfigParser()
+    # prevent ConfigParser from converting all keys to lower case, see
+    #  https://stackoverflow.com/questions/19359556/configparser-reads-capital-keys-and-make-them-lower-case
+    config.optionxform = str
+
+    config.read(args.control)
+    parameters |= dict(config.items('solarprop'))
+
+if args.parameters:
+    for kv in args.parameters.split(','):
+        key, value = kv.split('=')
+        parameters[key.strip()] = value.strip()
+
+parameters['dynamicStep'] = False
+print(parameters)
+
+s = solarprop.Solarprop(parameters)
+va = s.arrows(args.rmax, args.ekin, args.grid_points)
+dt = va[0].dt() / second
+
+if len(va) == 0:
+    sys.exit(1)
+
+arrows_v = [ ]
+arrows_drift = [ ]
+arrows_hcs = [ ]
+arrows_diff = [ ]
+
+for arr in va:
+
+    assert arr.dt() == dt
+
+    x, z = arr.startPosition()
+    dx_v, dz_v = np.array(arr.deltaConvection()) * args.scale_arrows
+    dx_drift, dz_drift = np.array(arr.deltaDrift()) * args.scale_arrows
+    dx_hcs, dz_hcs = np.array(arr.deltaHcsDrift()) * args.scale_arrows
+
+    arrow_v = np.array([x, z, dx_v, dz_v])
+    arrow_drift = np.array([x, z, dx_drift, dz_drift])
+    arrow_hcs = np.array([x, z, dx_hcs, dz_hcs])
+
+    arrows_v.append(arrow_v / AU)
+    arrows_drift.append(arrow_drift / AU)
+    arrows_hcs.append(arrow_hcs / AU)
+
+    for arr_diff in arr.deltasDiffusion():
+        dx_diff, dz_diff = np.array(arr_diff)
+        arrow_diff = np.array([x, z, dx_diff, dz_diff])
+        arrows_diff.append(arrow_diff / AU)
+
+tstr_diffusion = f' (dt = {dt:.0f} s)'
+tstr = f' (dt = {dt * args.scale_arrows:.0f} s)'
+
+if args.separate:
+    ax = [plt.subplots()[1] for i in range(4)]
+else:
+    _, ax =  plt.subplots(1, 4, sharex=True, sharey=True, figsize=(24, 12))
+
+plot(ax[0], np.array(arrows_v), 'black', boundary, 'convection' + tstr)
+plot(ax[1], np.array(arrows_drift), 'blue', boundary, 'drift' + tstr)
+plot(ax[2], np.array(arrows_hcs), 'green', boundary, 'HCS drift' + tstr)
+plot(ax[3], np.array(arrows_diff), 'red', boundary, 'diffusion' + tstr_diffusion)
+
+if args.separate:
+    for axx in ax:
+        axx.set_ylabel('z (AU)')
+        axx.get_figure().tight_layout()
+    if args.output:
+        suffixes = ['convection', 'drift', 'hcsdrift', 'diffusion']
+        fnametokens = os.path.splitext(args.output)
+        for iax, axx in enumerate(ax):
+            fname = fnametokens[0] + '_' + suffixes[iax] + fnametokens[1]
+            print(f'Writing plot {fname} ...')
+            axx.get_figure().savefig(fname)
+else:
+    ax[0].set_ylabel('z (AU)')
+    plt.tight_layout()
+    if args.output:
+        print(f'Writing plot {args.output} ...')
+        plt.savefig(args.output)
+
+if not args.batch:
+    plt.show()

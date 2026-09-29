@@ -1,0 +1,78 @@
+#! /usr/bin/env python3
+# -*- coding: utf-8 -*-
+
+"""
+SOLARPROP - charge-dependent solar modulation for everyone.
+
+This executable is provided mainly for backwards compatibility. New users are
+encouraged to use the python bindings of SOLARPROP instead.
+
+"""
+
+import argparse
+import configparser
+import sys
+
+import numpy as np
+
+import solarprop
+
+def solarprop_exe():
+
+    argparser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawTextHelpFormatter)
+    argparser.add_argument('-c', '--control', default='', help='Control file.')
+    argparser.add_argument('-p', '--parameters', default='', help='Specify parameters as comma-separated list of key=value pairs. Takes precedence over control file.')
+    argparser.add_argument('-a', '--angle', default='', help='Tilt angle file.')
+    argparser.add_argument('-n', '--neutron', default='', help='File with neutron monitor data.')
+    argparser.add_argument('-k', '--kappa', default='', help='Kappa file.')
+    argparser.add_argument('-o', '--output', default='', help='Output file name.')
+    argparser.add_argument('-i', '--input', default='', help='LIS input file. Two columns: Kinetic energy in GeV vs flux.')
+    argparser.add_argument('--config', action='store_true', help='Print version number and configuration information.')
+    args = argparser.parse_args()
+
+    parameters = { }
+    if args.control:
+        config = configparser.ConfigParser()
+        # prevent ConfigParser from converting all keys to lower case, see
+        #  https://stackoverflow.com/questions/19359556/configparser-reads-capital-keys-and-make-them-lower-case
+        config.optionxform = str
+
+        config.read(args.control)
+        parameters = dict(config.items('solarprop'))
+
+    if args.parameters:
+        for kv in args.parameters.split(','):
+            key, value = kv.split('=')
+            parameters[key.strip()] = value.strip()
+
+    if args.angle:
+        parameters['angleFile'] = args.angle
+    if args.neutron:
+        parameters['nmFile'] = args.neutron
+    if args.kappa:
+        parameters['kappaFile'] = args.kappa
+
+    s = solarprop.Solarprop(parameters)
+    if args.config:
+        s.print_config()
+        sys.exit(0)
+
+    if not args.input:
+        print('ERROR: Missing input file. Use the -i/--input option.')
+        sys.exit(1)
+
+    inputdata = np.genfromtxt(args.input, encoding='utf-8', dtype=float)
+    ekin = inputdata[:,0]
+    lis_T = inputdata[:,1]
+
+    flux_mod = s.modulate(ekin, lis_T)
+
+    if args.output:
+        with open(args.output, 'w', encoding='utf-8') as of:
+            for r in zip(ekin, flux_mod):
+                of.write(f'{r[0]} {r[1]}\n')
+        print(f'Results written to {args.output}.')
+
+
+if __name__ == '__main__':
+    solarprop_exe()
