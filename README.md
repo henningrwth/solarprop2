@@ -43,7 +43,7 @@ to test the installation.
 Detailed description
 --------------------
 
-The physics background of Solarprop is described in detail in an [accompanying preprint](https://www1b.physik.rwth-aachen.de/~henning/documents/solarprop2.pdf). This covers the transport equation governing charge-sign dependent solar modulation, its solution using SDEs, and validation studies with comparisons to previously published models. It also introduces the nomenclature used in the code and the documentation and discusses the efficiency of the parallelization of the code.
+The physics background of Solarprop is described in detail in an [accompanying preprint](https://arxiv.org/abs/2610.01360). This covers the transport equation governing charge-sign dependent solar modulation, its solution using SDEs, and validation studies with comparisons to previously published models. It also introduces the nomenclature used in the code and the documentation and discusses the efficiency of the parallelization of the code.
 
 
 Getting started
